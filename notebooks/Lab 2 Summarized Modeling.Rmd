@@ -1,0 +1,466 @@
+---
+title: "Lab 2 Summarized Modeling"
+author: "Abbas Siddiqui"
+date: "2024-04-01"
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r}
+
+rm(list=setdiff(ls(), "cleaned_df"))
+
+library(tidyverse)
+library(wooldridge)
+library(car)
+library(lmtest)
+library(sandwich)
+library(stargazer)
+library(ggplot2)
+
+```
+
+Set the "cleaned_df" to the variable "data".
+
+```{r}
+
+data <- cleaned_df
+
+glimpse(data)
+
+```
+
+Split data into exploration and confirmation sets (30% - 70% of data, respectively) 
+
+```{r}
+
+# Set a random seed
+set.seed(1)
+
+explore_perc = 0.3 # 30% of data to exploration set 
+num_sections = ceiling(dim(data)[1] * explore_perc)
+
+age_range = max(data$AGE) - min(data$AGE)
+
+increment = floor(age_range/num_sections)
+
+df_explore = data.frame()
+df_confirm = data.frame()
+
+lower_bound = 1
+upper_bound = increment
+
+while (dim(data)[1] - upper_bound >= -increment) {
+  # cat(lower_bound, upper_bound, "\n")
+  
+  rand_choice = sample(lower_bound:upper_bound, 1)
+  
+  # cat("Random num: ", rand_choice, "\n")
+  
+  for (i in lower_bound:upper_bound) {
+  if (i == rand_choice) {
+      # cat("Rand: ", i, "\n")
+      if (i < dim(data)[1]){
+        df_explore <- rbind(df_explore, data[i,])
+      }
+    } else {
+      # cat(i, "\n")
+      if (i < dim(data)[1]){
+        df_confirm <- rbind(df_confirm, data[i,])
+      }
+    }
+  }
+  
+  # cat("\n")
+  
+  lower_bound = lower_bound + increment
+  upper_bound = upper_bound + increment
+}
+
+```
+
+We opted to use random stratified sampling to ensure our data splits adequately cover a good range of age groups.
+
+Step 1: Establish a baseline model
+
+```{r}
+# Our baseline model looks to predict the % of fatalities in a crash given the age of the driver
+
+base_model <- lm(PCT_INJ_or_DEATH ~ AGE, data = df_explore)
+
+summary(base_model)
+
+y_pred = predict(object = base_model, data = df_explore['AGE'])
+
+```
+
+```{r}
+
+ggplot(df_explore, aes(x = AGE, y = PCT_INJ_or_DEATH)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  labs(title = "AGE VS PCT_INJ_or_DEATH")
+
+```
+
+```{r}
+
+df <- data.frame(x = y_pred, residuals = base_model$residuals)
+
+# Create residual plot
+residual_plot <- ggplot(df, aes(x = y_pred, y = residuals)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "dashed") +  # Add horizontal line at y = 0
+  labs(x = "Base Model Predictions", y = "Residuals") +
+  ggtitle("Linear Conditional Expectation") +
+  theme_minimal()
+
+# Overlay linear model line
+residual_plot <- residual_plot +
+  geom_abline(intercept = coef(base_model)[1], slope = coef(base_model)[2], color = "red")
+
+# Display plot
+print(residual_plot)
+
+```
+
+```{r}
+
+stargazer(base_model, type="text",
+ dep.var.labels=c("Percent Fatalities"),
+ covariate.labels=c("AGE"))
+
+```
+
+Step 2: Experiment with more complex models
+
+Now that we have established our baseline model, our next step is to create a more complex set of models and observe any trends which may emerge.
+
+```{r}
+
+# Utilizing new variables
+# 
+# v1 <- lm(PCT_INJ_or_DEATH ~ poly(AGE, degree = 1), data = df_explore)
+# v2 <- lm(PCT_INJ_or_DEATH ~ poly(AGE, degree = 2), data = df_explore)
+# v3 <- lm(PCT_INJ_or_DEATH ~ poly(AGE, degree = 3), data = df_explore)
+# v4 <- lm(PCT_INJ_or_DEATH ~ poly(AGE, degree = 4), data = df_explore) 
+# 
+# v5 <- lm(PCT_INJ_or_DEATH ~ DRUGS_Count, data = df_explore)
+# v6 <- lm(PCT_INJ_or_DEATH ~ DRUGS_Count/(Male_Count + Female_Count), data = df_explore)
+# 
+# v7 <- lm(PCT_INJ_or_DEATH ~ Male_Count, data = df_explore)
+# v8 <- lm(PCT_INJ_or_DEATH ~ Female_Count, data = df_explore)
+# v9 <- lm(PCT_INJ_or_DEATH ~ (Male_Count + Female_Count), data = df_explore)
+# v10 <- lm(PCT_INJ_or_DEATH ~ (Male_Count > Female_Count), data = df_explore)
+# v10_b <- lm(PCT_INJ_or_DEATH ~ Pct_Male, data = df_explore)
+# v10_c <- lm(PCT_INJ_or_DEATH ~ Pct_Female, data = df_explore)
+# 
+# v11 <- lm(PCT_INJ_or_DEATH ~ RUR_Count, data = df_explore)
+# v12 <- lm(PCT_INJ_or_DEATH ~ URB_Count, data = df_explore)
+# v13 <- lm(PCT_INJ_or_DEATH ~ HIGHWAY_Count, data = df_explore)
+# v14 <- lm(PCT_INJ_or_DEATH ~ (RUR_Count < URB_Count), data = df_explore)
+# v14_b <- lm(PCT_INJ_or_DEATH ~ Pct_RUR, data = df_explore)
+# v14_c <- lm(PCT_INJ_or_DEATH ~ Pct_URB, data = df_explore)
+# v14_d <- lm(PCT_INJ_or_DEATH ~ Pct_Highway, data = df_explore)
+# 
+# 
+# v15 <- lm(PCT_INJ_or_DEATH ~ Vehicle_Related_Accident, data = df_explore)
+# v16 <- lm(PCT_INJ_or_DEATH ~ Nature_Related_Accident, data = df_explore)
+# v17 <- lm(PCT_INJ_or_DEATH ~ Infrastructure_Related_Accident, data = df_explore)
+# v18 <- lm(PCT_INJ_or_DEATH ~ Living_Entities_Accident, data = df_explore)
+# v19 <- lm(PCT_INJ_or_DEATH ~ Other_Accident, data = df_explore)
+# v19_b <- lm(PCT_INJ_or_DEATH ~ Pct_Vehicle_Rel_Acc, data = df_explore)
+# v19_c <- lm(PCT_INJ_or_DEATH ~ Pct_Nature_Rel_Acc, data = df_explore)
+# v19_d <- lm(PCT_INJ_or_DEATH ~ Pct_Inf_Rel_Acc, data = df_explore)
+# v19_e <- lm(PCT_INJ_or_DEATH ~ Pct_Liv_Ent_Acc, data = df_explore)
+# v19_f <- lm(PCT_INJ_or_DEATH ~ Pct_Oth_Acc, data = df_explore)
+# 
+# v20 <- lm(PCT_INJ_or_DEATH ~ Vehicle_Related_Accident/(Vehicle_Related_Accident + Nature_Related_Accident + Infrastructure_Related_Accident + Living_Entities_Accident), data = df_explore)
+# v21 <- lm(PCT_INJ_or_DEATH ~ Nature_Related_Accident/(Vehicle_Related_Accident + Nature_Related_Accident + Infrastructure_Related_Accident + Living_Entities_Accident), data = df_explore)
+# v22 <- lm(PCT_INJ_or_DEATH ~ Infrastructure_Related_Accident/(Vehicle_Related_Accident + Nature_Related_Accident + Infrastructure_Related_Accident + Living_Entities_Accident), data = df_explore)
+# v23 <- lm(PCT_INJ_or_DEATH ~ Living_Entities_Accident/(Vehicle_Related_Accident + Nature_Related_Accident + Infrastructure_Related_Accident + Living_Entities_Accident), data = df_explore)
+# 
+# v24 <- lm(PCT_INJ_or_DEATH ~ poly(AGE, degree = 2)*Vehicle_Related_Accident, data = df_explore)
+# v25 <- lm(PCT_INJ_or_DEATH ~ poly(AGE, degree = 2)*Nature_Related_Accident, data = df_explore)
+# v26 <- lm(PCT_INJ_or_DEATH ~ poly(AGE, degree = 2)*Infrastructure_Related_Accident, data = df_explore)
+# v27 <- lm(PCT_INJ_or_DEATH ~ poly(AGE, degree = 2)*Living_Entities_Accident, data = df_explore)
+# v28 <- lm(PCT_INJ_or_DEATH ~ poly(AGE, degree = 2)*Other_Accident, data = df_explore)
+# 
+# v29 <- lm(PCT_INJ_or_DEATH ~ DRINKING_Count, data = df_explore)
+# v30 <- lm(PCT_INJ_or_DEATH ~ DRINKING_Count/(Male_Count + Female_Count), data = df_explore)
+# v31 <- lm(PCT_INJ_or_DEATH ~ poly(AGE, degree = 2)*DRINKING_Count/(Male_Count + Female_Count), data = df_explore)
+# v32 <- lm(PCT_INJ_or_DEATH ~ poly(AGE, degree = 2)*DRINKING_Count, data = df_explore)
+# v33 <- lm(PCT_INJ_or_DEATH ~ AGE*DRINKING_Count, data = df_explore)
+# v33_b <- lm(PCT_INJ_or_DEATH ~ Pct_Driver_Alc, data = df_explore)
+# 
+# v34 <- lm(PCT_INJ_or_DEATH ~ NUM_PPL_INVOLVED, data = df_explore)
+# v34_b <- lm(PCT_INJ_or_DEATH ~ poly(NUM_PPL_INVOLVED, degree = 3), data = df_explore)
+# 
+# v35 <- lm(PCT_INJ_or_DEATH ~ Passenger_Cars, data = df_explore)
+# v36 <- lm(PCT_INJ_or_DEATH ~ Trucks_and_Vans, data = df_explore)
+# v37 <- lm(PCT_INJ_or_DEATH ~ Motorcycles, data = df_explore)
+# v38 <- lm(PCT_INJ_or_DEATH ~ Off_Road_Vehicles, data = df_explore)
+# v39 <- lm(PCT_INJ_or_DEATH ~ Special_Purpose_Vehicles, data = df_explore)
+# v40 <- lm(PCT_INJ_or_DEATH ~ Others, data = df_explore)
+# v40_b <- lm(PCT_INJ_or_DEATH ~ Pct_Passenger_Cars, data = df_explore)
+# v40_c <- lm(PCT_INJ_or_DEATH ~ Pct_Trucks_and_Vans, data = df_explore)
+# v40_d <- lm(PCT_INJ_or_DEATH ~ Pct_Motorcycles, data = df_explore)
+# v40_e <- lm(PCT_INJ_or_DEATH ~ Pct_Offroad_Vehicles, data = df_explore)
+# v40_f <- lm(PCT_INJ_or_DEATH ~ Pct_Other_Vehicles, data = df_explore)
+# 
+# v41 <- lm(PCT_INJ_or_DEATH ~ Passenger_Cars + Trucks_and_Vans + Motorcycles + Off_Road_Vehicles + Special_Purpose_Vehicles + Others, data = df_explore)
+# v41_b <- lm(PCT_INJ_or_DEATH ~ Pct_Passenger_Cars + Pct_Trucks_and_Vans + Pct_Motorcycles + Pct_Offroad_Vehicles + Pct_Other_Vehicles, data = df_explore)
+# 
+# v42 <- lm(PCT_INJ_or_DEATH ~ poly(AGE, degree = 2) + poly(AGE, degree = 2)*Vehicle_Related_Accident + poly(AGE, degree = 2)*DRINKING_Count + poly(NUM_PPL_INVOLVED, degree = 3), data = df_explore)
+# 
+# v42_b <- lm(PCT_INJ_or_DEATH ~ poly(AGE, degree = 2), data = df_explore)
+# v42_c <- lm(PCT_INJ_or_DEATH ~ poly(AGE, degree = 2) + Vehicle_Related_Accident, data = df_explore)
+# v42_d <- lm(PCT_INJ_or_DEATH ~ poly(AGE, degree = 2) + Living_Entities_Accident, data = df_explore)
+# v42_e <- lm(PCT_INJ_or_DEATH ~ poly(AGE, degree = 2) + Pct_Liv_Ent_Acc, data = df_explore)
+# v42_f <- lm(PCT_INJ_or_DEATH ~ poly(AGE, degree = 2) + RUR_Count + Pct_Highway, data = df_explore)
+# v42_g <- lm(PCT_INJ_or_DEATH ~ poly(AGE, degree = 2) + Male_Count + RUR_Count + Pct_Highway, data = df_explore)
+# v42_h <- lm(PCT_INJ_or_DEATH ~ poly(AGE, degree = 2) + (Pct_Passenger_Cars + Pct_Trucks_and_Vans + Pct_Motorcycles + Pct_Offroad_Vehicles + Pct_Other_Vehicles), data = df_explore)
+
+
+# stargazer(v1, v2, v3, v4, type="text") # v2
+# stargazer(v5, v6, type="text") # v6
+# stargazer(v7, v8, v9, v10, v10_b, v10_c, type="text") # v10_b
+# stargazer(v11, v12, v13, v14, v14_b, v14_c, v14_d, type="text") # v11, v12, v13
+# stargazer(v15, v16, v17, v18, v19, v19_b, v19_c, v19_d, v19_e, v19_f, type="text") # v15, v18, v19_d
+# stargazer(v20, v21, v22, v23, v24, type="text")
+# stargazer(v4, v24, v25, v26, v27, v28, type="text") # v26
+# stargazer(v29, v30, v31, v32, v33, type="text") #v30, v33
+# stargazer(v34, v34_b, type="text") # v34*
+# stargazer(v35, v36, v37, v38, v39, v40, v41, v41_b, type="text") #v36, v39
+# stargazer(v40_b, v40_c, v40_d, v40_e, v40_f, type="text") #v40_b, v40_d
+# stargazer(v42, v42_b, v42_c, v42_d, v42_e, v42_f, v42_g, v42_h, type="text")
+
+```
+
+```{r}
+
+library(corrplot)
+
+# Compute the correlation matrix excluding selected columns
+correlation_matrix <- cor(df_explore)
+
+# Generate the correlation plot with smaller size and save as PNG
+png("correlation_plot.png", width = 1000, height = 1000)
+par(mfrow=c(1,1), mar=c(1,1,1,1))
+corrplot(correlation_matrix, method = "circle", type = "full", tl.col = "black")
+# dev.off()
+
+# Set your desired threshold
+threshold <- 0.6
+
+# Filter the correlation matrix to select only combinations above the threshold
+high_correlations <- which(abs(correlation_matrix) > threshold & correlation_matrix != 1, arr.ind = TRUE)
+
+# Get the names of variables
+variable_names <- colnames(correlation_matrix)
+
+cat("Check working directory for 'correlation_plot.png'", '\n\n')
+
+# Print the feature pairs by name instead of coordinates
+for (i in 1:nrow(high_correlations)) {
+  var1 <- variable_names[high_correlations[i, 1]]
+  var2 <- variable_names[high_correlations[i, 2]]
+  if(var2 == "PCT_INJ_or_DEATH"){
+    cat("Correlation between", var1, "and", var2, "is", correlation_matrix[high_correlations[i, 1], high_correlations[i, 2]], "\n")
+  }
+}
+
+```
+
+```{r}
+
+m1 <- lm(PCT_INJ_or_DEATH ~ poly(AGE, 2) , data = df_explore) # Fits the very general trend, but still quite good
+m2 <- lm(PCT_INJ_or_DEATH ~ DRUGS_Count/(Male_Count + Female_Count), data = df_explore) #Slightly over fits LHS but under fits RHS
+m3 <- lm(PCT_INJ_or_DEATH ~ Pct_Male, data = df_explore) # Gets the LHS endpoint right, I think the way to get both endpoints is to play with the number of people from those ages driving
+m4 <- lm(PCT_INJ_or_DEATH ~ RUR_Count, data = df_explore) # Not very clear how this helps (Nike Logo)
+m5 <- lm(PCT_INJ_or_DEATH ~ URB_Count, data = df_explore) # Not very clear how this helps (Nike Logo)
+m6 <- lm(PCT_INJ_or_DEATH ~ HIGHWAY_Count, data = df_explore) # Caps at ~.63 and has dips; Could be used to stabilize estimations
+m7 <- lm(PCT_INJ_or_DEATH ~ Vehicle_Related_Accident, data = df_explore) # Not very clear how this helps (Nike Logo)
+m8 <- lm(PCT_INJ_or_DEATH ~ Living_Entities_Accident, data = df_explore) # Similar to Nike Log, but RHS is a bit more  stable and there's a sharper change, like a check mark
+m9 <- lm(PCT_INJ_or_DEATH ~ Other_Accident, data = df_explore) # Kraggly Nike Mark
+m10 <-lm(PCT_INJ_or_DEATH ~ poly(AGE, degree = 2)*Infrastructure_Related_Accident, data = df_explore) # Fits the LHS and Middle quite well. RHS is ok but approaches inf
+m11 <- lm(PCT_INJ_or_DEATH ~ DRINKING_Count/(Male_Count + Female_Count), data = df_explore) # Approximates most well, except for endpoints
+m12 <- lm(PCT_INJ_or_DEATH ~ AGE*DRINKING_Count, data = df_explore) # LHS and general trend pretty solid
+m13 <- lm(PCT_INJ_or_DEATH ~ NUM_PPL_INVOLVED, data = df_explore) # Different general trend
+m14 <- lm(PCT_INJ_or_DEATH ~ Trucks_and_Vans, data = df_explore) # Subdued smoother-curve
+m15 <- lm(PCT_INJ_or_DEATH ~ Special_Purpose_Vehicles, data = df_explore) # Stable RHS and generally ok
+m16 <- lm(PCT_INJ_or_DEATH ~ Pct_Passenger_Cars, data = df_explore) # LHS is really good! Generally runs on the high trend but follows the trend well
+m17 <- lm(PCT_INJ_or_DEATH ~ Pct_Motorcycles, data = df_explore) # Fits general trend ok
+
+
+mf_long <- lm(PCT_INJ_or_DEATH ~ poly(AGE,2), data = df_explore)
+
+mf_short <- lm(PCT_INJ_or_DEATH ~ AGE + Pct_Driver_Alc + AGE*Pct_Inf_Rel_Acc + Pct_Passenger_Cars + sqrt(NUM_PPL_INVOLVED), data = df_explore)
+
+model_long = mf_long
+model_short = mf_short
+
+# Create a new data frame with original and predicted values
+df_plot_long = df_explore
+df_plot_long$predicted = predict(model_long, df_explore)
+
+df_plot_short = df_explore
+df_plot_short$predicted = predict(model_short, df_explore)
+
+ggplot(data = df_explore, aes(x = AGE, y = PCT_INJ_or_DEATH)) +
+  geom_point() +  # Original data
+  geom_line(data = df_plot_long, aes(x = AGE, y = predicted, color = "Long")) +
+  geom_line(data = df_plot_short, aes(x = AGE, y = predicted, color = "Short")) +
+  labs(title = "Model Fit", x = "AGE", y = "PCT_INJ_or_DEATH") +
+  scale_color_manual(values = c("Long" = "yellowgreen", "Short" = "black"),
+                     labels = c("Simple", "Complex"))
+
+# print(stargazer(m1, m2, m3, m4, m5, m6, type="text"))
+# print(stargazer(m7, m8, m9, m10, m11, m12, type="text"))
+# print(stargazer(m13, m14, m15, m16, m17, m18, type="text"))
+
+print(stargazer(mf_short, mf_long, type="text"))
+
+# Coefficient Significance T-Test
+(anova(mf_short, mf_long, test="R"))
+
+```
+
+```{r}
+# ANOVA based functions
+
+a1 <- lm(PCT_INJ_or_DEATH ~ AGE, data = df_explore)
+
+a2 <- lm(PCT_INJ_or_DEATH ~ AGE + Pct_Driver_Alc, data = df_explore)
+
+a3 <- lm(PCT_INJ_or_DEATH ~ AGE + Pct_Driver_Alc + AGE*Infrastructure_Related_Accident, data = df_explore)
+
+a4 <- lm(PCT_INJ_or_DEATH ~ AGE + Pct_Driver_Alc + AGE*Pct_Inf_Rel_Acc, data = df_explore)
+
+a5 <- lm(PCT_INJ_or_DEATH ~ AGE + Pct_Driver_Alc + AGE*Pct_Inf_Rel_Acc + Pct_Passenger_Cars, data = df_explore)
+
+a6 <- lm(PCT_INJ_or_DEATH ~ AGE + AGE*Pct_Inf_Rel_Acc + Pct_Passenger_Cars, data = df_explore)
+
+a7 <- lm(PCT_INJ_or_DEATH ~ AGE + Pct_Driver_Alc + AGE*Pct_Inf_Rel_Acc + Pct_Passenger_Cars + sqrt(NUM_PPL_INVOLVED), data = df_explore)
+
+a8 <- lm(PCT_INJ_or_DEATH ~ poly(AGE,2), data = df_explore)
+
+stargazer(a1, a2, a3, a4, a5, a6, a7, a8, type = "text")
+
+```
+
+```{r}
+
+plot_all_models <- function(models, colors) {
+  df_plot <- df_explore
+  df_plot$predicted1 <- predict(models[[1]], df_explore)
+  df_plot$predicted2 <- predict(models[[2]], df_explore)
+  df_plot$predicted3 <- predict(models[[3]], df_explore)
+  df_plot$predicted4 <- predict(models[[4]], df_explore)
+  df_plot$predicted5 <- predict(models[[5]], df_explore)
+  df_plot$predicted6 <- predict(models[[6]], df_explore)
+  df_plot$predicted7 <- predict(models[[7]], df_explore)
+ 
+  ggplot(data = df_plot, aes(x = AGE, y = PCT_INJ_or_DEATH)) +
+    geom_point() +  # Original data
+    geom_line(aes(y = predicted1, color = "Model 1")) +
+    geom_line(aes(y = predicted2, color = "Model 2")) +
+    geom_line(aes(y = predicted3, color = "Model 3")) +
+    geom_line(aes(y = predicted4, color = "Model 4")) +
+    geom_line(aes(y = predicted5, color = "Model 5")) +
+    geom_line(aes(y = predicted6, color = "Model 6")) +
+    geom_line(aes(y = predicted7, color = "Model 7")) +
+    labs(title = "ANOVA Progression of Models", x = "AGE", y = "PCT_INJ_or_DEATH", color = "Model") +
+    scale_color_manual(values = colors, labels = c("Model 1", "Model 2", "Model 3", "Model 4", "Model 5", "Model 6", "Model 7"))}
+colors <- c("red", "blue", "green", "purple", "orange", "yellow", "black")
+
+plot_all <- plot_all_models(list(a1, a2, a3, a4, a5, a6, a7), colors)
+plot_all
+
+```
+
+
+```{r}
+
+temp_model = mf_short
+
+# (plot(x = predict(object = temp_model, data = df_explore), y = temp_model$residuals))
+
+temp <- data.frame(
+    preds = predict(object = temp_model, data = data),
+    resid = resid(temp_model)
+)
+
+ggplot(temp, aes(preds, resid)) +
+  geom_point() +
+  stat_smooth()
+
+```
+
+```{r}
+
+model = model_short
+
+qqnorm(model$residuals)
+qqline(model$residuals, col = "blue", lwd = 2)
+
+```
+
+```{r}
+y_pred = predict(object = mf_short, newdata = df_explore)
+
+# Plot AGE against y_pred
+plot(df_explore$AGE, y_pred, 
+     xlab = "AGE", ylab = "Predicted Values",
+     main = "AGE VS Predicted Values")
+
+```
+
+```{r}
+
+df <- data.frame(x = y_pred, residuals = mf_short$residuals)
+
+# Create residual plot
+residual_plot <- ggplot(df, aes(x = y_pred, y = residuals)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "dashed") +  # Add horizontal line at y = 0
+  labs(x = "x", y = "Residuals") +
+  ggtitle("Residual Plot") +
+  theme_minimal()
+
+# Overlay linear model line
+residual_plot <- residual_plot +
+  geom_abline(intercept = coef(base_model)[1], slope = coef(base_model)[2], color = "red")
+
+# Display plot
+print(residual_plot)
+
+```
+
+```{r}
+
+# Calculate the residual std. error for predicted values
+
+temp_model = model_short
+
+# Step 1: Generate Predictions
+predictions <- predict(temp_model, newdata = df_confirm)
+
+# Step 2: Calculate Residuals
+residuals <- df_confirm$PCT_INJ_or_DEATH - predictions
+
+# Step 3: Calculate Residual Sum of Squares (RSS)
+RSS <- sum(residuals^2)
+
+# Step 4: Calculate Residual Standard Error (RSE)
+n <- nrow(df_confirm)  # Number of observations
+p <- length(coef(temp_model)) - 1  # Number of predictors (excluding intercept)
+df <- n - p - 1  # Degrees of freedom
+RSE <- sqrt(RSS / df)
+
+# View the Residual Standard Error (RSE)
+print(RSE)
+
+```
+
